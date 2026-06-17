@@ -31,7 +31,7 @@ pub struct Map {
     pub resources: HashMap<Pos, Resource>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Resource {
     pub kind: ResourceKind,
     pub quantity: u32,
@@ -40,9 +40,17 @@ pub struct Resource {
 // ── Messages entre robots et base ────────────────────────────
 #[derive(Clone, Debug)]
 pub enum RobotMessage {
-    DiscoveredResource { pos: Pos, resource: Resource },
-    DiscoveredObstacle { pos: Pos },
-    CollectedUnit { pos: Pos, kind: ResourceKind },
+    DiscoveredResource {
+        pos: Pos,
+        resource: Resource,
+    },
+    DiscoveredObstacle {
+        pos: Pos,
+    },
+    CollectedUnit {
+        pos: Pos,
+        kind: ResourceKind,
+    },
     Unloading {
         robot_id: usize,
         kind: ResourceKind,
@@ -51,6 +59,7 @@ pub enum RobotMessage {
 }
 
 // ── État partagé de la base ───────────────────────────────────
+#[derive(Default)]
 pub struct BaseState {
     pub total_energy: u32,
     pub total_crystals: u32,

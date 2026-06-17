@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use noise::{NoiseFn, Perlin};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 
 use crate::types::{Map, Pos, Resource, ResourceKind, Tile};
 
@@ -55,10 +55,8 @@ pub fn generate_map(config: &MapConfig) -> Map {
                 continue;
             }
 
-            let noise_value = perlin.get([
-                x as f64 * config.noise_scale,
-                y as f64 * config.noise_scale,
-            ]);
+            let noise_value =
+                perlin.get([x as f64 * config.noise_scale, y as f64 * config.noise_scale]);
 
             if noise_value > config.obstacle_threshold {
                 tiles[y][x] = Tile::Obstacle;
@@ -85,7 +83,11 @@ pub fn generate_map(config: &MapConfig) -> Map {
     let total_resources = config.energy_count + config.crystal_count;
     let placement_count = total_resources.min(empty_positions.len());
 
-    for (i, pos) in empty_positions.into_iter().take(placement_count).enumerate() {
+    for (i, pos) in empty_positions
+        .into_iter()
+        .take(placement_count)
+        .enumerate()
+    {
         let kind = if i < config.energy_count {
             ResourceKind::Energy
         } else {
@@ -94,13 +96,7 @@ pub fn generate_map(config: &MapConfig) -> Map {
 
         let quantity = rng.random_range(MIN_RESOURCE_QTY..=MAX_RESOURCE_QTY);
         tiles[pos.y][pos.x] = Tile::Resource(kind);
-        resources.insert(
-            pos,
-            Resource {
-                kind,
-                quantity,
-            },
-        );
+        resources.insert(pos, Resource { kind, quantity });
     }
 
     Map {
