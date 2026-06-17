@@ -4,14 +4,16 @@ use std::sync::mpsc::Sender;
 use std::time::Duration;
 use std::thread;
 use rand::prelude::IndexedRandom;
+
 use crate::types::{Pos, Map, Tile, RobotMessage};
 
 pub struct Scout {
     pub id: usize,
     pub pos: Pos,
-    pub known_obstacles: HashSet<Pos>, 
+    pub known_obstacles: HashSet<Pos>,
+    pub known_resources: HashSet<Pos>, 
     pub tx: Sender<RobotMessage>,      
-    pub map: Arc<Map>,              
+    pub map: Arc<Map>,                 
 }
 
 impl Scout {
@@ -19,8 +21,9 @@ impl Scout {
         let base_pos = map.base_pos;
         Self {
             id,
-            pos: base_pos, 
+            pos: base_pos,
             known_obstacles: HashSet::new(),
+            known_resources: HashSet::new(), 
             tx,
             map,
         }
@@ -40,7 +43,7 @@ impl Scout {
         }
     }
 
-    fn scan_surroundings(&mut self) {
+    pub fn scan_surroundings(&mut self) {
         let directions = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)];
 
         for (dx, dy) in directions {
@@ -59,12 +62,13 @@ impl Scout {
                                 }
                             }
                             Tile::Resource(_) => {
-                               
-                                if let Some(res) = self.map.resources.get(&target_pos) {
-                                    let _ = self.tx.send(RobotMessage::DiscoveredResource {
-                                        pos: target_pos,
-                                        resource: res.clone(),
-                                    });
+                                if self.known_resources.insert(target_pos) {
+                                    if let Some(res) = self.map.resources.get(&target_pos) {
+                                        let _ = self.tx.send(RobotMessage::DiscoveredResource {
+                                            pos: target_pos,
+                                            resource: res.clone(),
+                                        });
+                                    }
                                 }
                             }
                             _ => {}
@@ -75,7 +79,6 @@ impl Scout {
         }
     }
 
-    /// Sélectionne une coordonnée adjacente valide au hasard
     fn choose_next_move(&self, rng: &mut impl rand::Rng) -> Option<Pos> {
         let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let mut valid_moves = Vec::new();
@@ -94,5 +97,44 @@ impl Scout {
         }
 
         valid_moves.choose(rng).copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::collections::HashMap;
+    use crate::types::{ResourceKind, Resource};
+
+    #[test]
+    fn test_scout_only_discovers_resource_once() {
+        let (tx, rx) = mpsc::channel();
+        
+        let mut resources = HashMap::new();
+        let res_pos = Pos { x: 1, y: 0 };
+        resources.insert(res_pos, Resource { kind: ResourceKind::Energy, quantity: 120 });
+
+        let map = Arc::new(Map {
+            width: 2,
+            height: 1,
+            tiles: vec![vec![Tile::Base, Tile::Resource(ResourceKind::Energy)]],
+            base_pos: Pos { x: 0, y: 0 },
+            resources,
+        });
+
+        let mut scout = Scout::new(1, tx, map);
+        
+        scout.scan_surroundings();
+        assert!(scout.known_resources.contains(&res_pos));
+        
+        scout.scan_surroundings();
+
+        let mut msg_count = 0;
+        while rx.try_recv().is_ok() {
+            msg_count += 1;
+        }
+        
+        assert_eq!(msg_count, 1, "Le scout a spammé le canal avec la même ressource !");
     }
 }
