@@ -1,12 +1,10 @@
-use resource_collection_simulation::{RobotMessage, UIState, ResourceKind, Pos, Resource};
+use resource_collection_simulation::{RobotMessage, UIState, ResourceKind};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 
 // ── Système de communication ────────────────────────────────
 pub struct CommunicationBus {
-    // Receiver côté base pour tous les messages
     pub message_receiver: Arc<Mutex<Receiver<RobotMessage>>>,
-    // Sender que les robots utilisent pour envoyer des messages
     pub message_sender: Sender<RobotMessage>,
 }
 
@@ -19,15 +17,17 @@ impl CommunicationBus {
         }
     }
 
-    /// Met à jour l'UIState avec les messages reçus
-    pub fn process_messages(&self, state: &mut UIState) {
-        if let Ok(mut receiver) = self.message_receiver.lock() {
-            loop {
-                match receiver.try_recv() {
-                    Ok(msg) => handle_robot_message(&msg, state),
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => break,
-                }
+    pub fn drain_messages(&self, state: &mut UIState) {
+        let guard = match self.message_receiver.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+
+        loop {
+            match guard.try_recv() {
+                Ok(msg) => handle_robot_message(&msg, state),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
             }
         }
     }

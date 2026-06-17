@@ -46,34 +46,26 @@ impl UIRenderer {
         UIRenderer { width, height }
     }
 
-    /// Lance la boucle UI principale
     pub fn run(&self, map: &Map, mut app_state: UIApp, bus: &CommunicationBus) -> io::Result<()> {
-        // Setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        // État de l'UI
         let mut ui_state = UIState::new();
 
-        // Boucle principale
         loop {
-            // Vérifier les inputs
             app_state.handle_input()?;
             if !app_state.running {
                 break;
             }
 
-            // Traitement des messages de communication
-            bus.process_messages(&mut ui_state);
+            bus.drain_messages(&mut ui_state);
 
-            // Rendu
             terminal.draw(|f| self.draw(f, map, &ui_state))?;
         }
 
-        // Cleanup terminal
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
@@ -85,43 +77,37 @@ impl UIRenderer {
         Ok(())
     }
 
-    /// Dessine l'UI dans le terminal
     fn draw(&self, f: &mut ratatui::Frame, map: &Map, state: &UIState) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
             .constraints(
                 [
-                    Constraint::Length(3),      // Titre
-                    Constraint::Min(12),         // Carte
-                    Constraint::Length(3),      // Compteurs
-                    Constraint::Length(4),      // Ressources découvertes
+                    Constraint::Length(3),
+                    Constraint::Min(12),
+                    Constraint::Length(3),
+                    Constraint::Length(4),
                 ]
                 .as_ref(),
             )
             .split(f.area());
 
-        // Titre
-        let title = Paragraph::new("🚀 RESOURCE COLLECTION SIMULATION")
+        let title = Paragraph::new("RESOURCE COLLECTION SIMULATION")
             .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
 
-        // Carte
         let map_widget = self.render_map(map, state);
         f.render_widget(map_widget, chunks[1]);
 
-        // Compteurs
         let counters = self.render_counters(state);
         f.render_widget(counters, chunks[2]);
 
-        // Ressources découvertes
         let resources = self.render_discovered_resources(state);
         f.render_widget(resources, chunks[3]);
     }
 
-    /// Rendu de la carte dans Ratatui
-    fn render_map(&self, map: &Map, _state: &UIState) -> Paragraph {
+    fn render_map(&self, map: &Map, _state: &UIState) -> Paragraph<'_> {
         let mut lines = vec![];
 
         for y in 0..map.height {
@@ -130,11 +116,11 @@ impl UIRenderer {
                 let tile = map.tiles[y][x];
 
                 let (symbol, color) = match tile {
-                    Tile::Empty => ("·", Color::DarkGray),
-                    Tile::Obstacle => ("█", Color::Red),
+                    Tile::Empty => (".", Color::DarkGray),
+                    Tile::Obstacle => ("O", Color::Red),
                     Tile::Base => ("#", Color::Yellow),
-                    Tile::Resource(ResourceKind::Energy) => ("⚡", Color::Green),
-                    Tile::Resource(ResourceKind::Crystal) => ("💎", Color::Magenta),
+                    Tile::Resource(ResourceKind::Energy) => ("E", Color::Green),
+                    Tile::Resource(ResourceKind::Crystal) => ("C", Color::Magenta),
                 };
 
                 line_spans.push(Span::styled(symbol, Style::default().fg(color)));
@@ -147,37 +133,33 @@ impl UIRenderer {
             .wrap(Wrap { trim: true })
     }
 
-    /// Affiche les compteurs
-    fn render_counters(&self, state: &UIState) -> Paragraph {
+    fn render_counters(&self, state: &UIState) -> Paragraph<'_> {
         let content = vec![
             Line::from(vec![
-                Span::styled("⚡ Énergie: ", Style::default().fg(Color::Green)),
+                Span::styled("Energie: ", Style::default().fg(Color::Green)),
                 Span::raw(format!("{}", state.energy_collected)),
-            ]),
-            Line::from(vec![
-                Span::styled("💎 Cristaux: ", Style::default().fg(Color::Magenta)),
+                Span::styled("  Cristaux: ", Style::default().fg(Color::Magenta)),
                 Span::raw(format!("{}", state.crystals_collected)),
             ]),
         ];
 
         Paragraph::new(content)
-            .block(Block::default().title("Ressources").borders(Borders::ALL))
+            .block(Block::default().title("Ressources collectees").borders(Borders::ALL))
     }
 
-    /// Affiche les ressources découvertes
-    fn render_discovered_resources(&self, state: &UIState) -> Paragraph {
+    fn render_discovered_resources(&self, state: &UIState) -> Paragraph<'_> {
         let mut content = vec![];
 
         if state.discovered_resources.is_empty() {
-            content.push(Line::from(Span::raw("Aucune ressource découverte")));
+            content.push(Line::from(Span::raw("Aucune ressource decouverte")));
         } else {
             for (pos, resource) in state.discovered_resources.iter().take(3) {
                 let kind_str = match resource.kind {
-                    ResourceKind::Energy => "⚡ Énergie",
-                    ResourceKind::Crystal => "💎 Cristaux",
+                    ResourceKind::Energy => "Energie",
+                    ResourceKind::Crystal => "Cristaux",
                 };
                 content.push(Line::from(format!(
-                    "{} à ({},{}): {}",
+                    "{} a ({},{}): {}",
                     kind_str, pos.x, pos.y, resource.quantity
                 )));
             }
@@ -186,7 +168,7 @@ impl UIRenderer {
         Paragraph::new(content)
             .block(
                 Block::default()
-                    .title("Découvertes (Q pour quitter)")
+                    .title("Decouvertes (Q pour quitter)")
                     .borders(Borders::ALL),
             )
     }
