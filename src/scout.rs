@@ -1,19 +1,19 @@
+use rand::prelude::IndexedRandom;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
-use std::time::Duration;
 use std::thread;
-use rand::prelude::IndexedRandom;
+use std::time::Duration;
 
-use crate::types::{Pos, Map, Tile, RobotMessage};
+use crate::types::{Map, Pos, RobotMessage, Tile};
 
 pub struct Scout {
     pub id: usize,
     pub pos: Pos,
     pub known_obstacles: HashSet<Pos>,
-    pub known_resources: HashSet<Pos>, 
-    pub tx: Sender<RobotMessage>,      
-    pub map: Arc<Map>,                 
+    pub known_resources: HashSet<Pos>,
+    pub tx: Sender<RobotMessage>,
+    pub map: Arc<Map>,
 }
 
 impl Scout {
@@ -23,7 +23,7 @@ impl Scout {
             id,
             pos: base_pos,
             known_obstacles: HashSet::new(),
-            known_resources: HashSet::new(), 
+            known_resources: HashSet::new(),
             tx,
             map,
         }
@@ -51,14 +51,19 @@ impl Scout {
             let ny = self.pos.y as i32 + dy;
 
             if nx >= 0 && ny >= 0 {
-                let target_pos = Pos { x: nx as usize, y: ny as usize };
+                let target_pos = Pos {
+                    x: nx as usize,
+                    y: ny as usize,
+                };
 
                 if self.map.in_bounds(target_pos) {
                     if let Some(tile) = self.map.get_tile(target_pos) {
                         match tile {
                             Tile::Obstacle => {
                                 if self.known_obstacles.insert(target_pos) {
-                                    let _ = self.tx.send(RobotMessage::DiscoveredObstacle { pos: target_pos });
+                                    let _ = self
+                                        .tx
+                                        .send(RobotMessage::DiscoveredObstacle { pos: target_pos });
                                 }
                             }
                             Tile::Resource(_) => {
@@ -88,7 +93,10 @@ impl Scout {
             let ny = self.pos.y as i32 + dy;
 
             if nx >= 0 && ny >= 0 {
-                let next_pos = Pos { x: nx as usize, y: ny as usize };
+                let next_pos = Pos {
+                    x: nx as usize,
+                    y: ny as usize,
+                };
 
                 if self.map.in_bounds(next_pos) && !self.known_obstacles.contains(&next_pos) {
                     valid_moves.push(next_pos);
@@ -103,17 +111,23 @@ impl Scout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc;
+    use crate::types::{Resource, ResourceKind};
     use std::collections::HashMap;
-    use crate::types::{ResourceKind, Resource};
+    use std::sync::mpsc;
 
     #[test]
     fn test_scout_only_discovers_resource_once() {
         let (tx, rx) = mpsc::channel();
-        
+
         let mut resources = HashMap::new();
         let res_pos = Pos { x: 1, y: 0 };
-        resources.insert(res_pos, Resource { kind: ResourceKind::Energy, quantity: 120 });
+        resources.insert(
+            res_pos,
+            Resource {
+                kind: ResourceKind::Energy,
+                quantity: 120,
+            },
+        );
 
         let map = Arc::new(Map {
             width: 2,
@@ -124,17 +138,20 @@ mod tests {
         });
 
         let mut scout = Scout::new(1, tx, map);
-        
+
         scout.scan_surroundings();
         assert!(scout.known_resources.contains(&res_pos));
-        
+
         scout.scan_surroundings();
 
         let mut msg_count = 0;
         while rx.try_recv().is_ok() {
             msg_count += 1;
         }
-        
-        assert_eq!(msg_count, 1, "Le scout a spammé le canal avec la même ressource !");
+
+        assert_eq!(
+            msg_count, 1,
+            "Le scout a spammé le canal avec la même ressource !"
+        );
     }
 }
