@@ -113,3 +113,23 @@ impl Map {
         }
     }
 }
+
+// ── État de l'UI ────────────────────────────────────────────
+#[derive(Clone, Debug)]
+pub struct UIState {
+    pub energy_collected: u32,
+    pub crystals_collected: u32,
+    pub discovered_resources: HashMap<Pos, Resource>,
+    pub discovered_obstacles: Vec<Pos>,
+}
+
+impl UIState {
+    pub fn new() -> Self {
+        UIState {
+            energy_collected: 0,
+            crystals_collected: 0,
+            discovered_resources: HashMap::new(),
+            discovered_obstacles: Vec::new(),
+        }
+    }
+}
