@@ -85,15 +85,17 @@ pub fn run(
         handles.push(handle);
     }
 
-    // Drop le dernier Sender : quand tous les threads robots auront terminé,
-    // le canal sera fermé.
     drop(tx);
 
-    // --- Boucle principale de simulation (tick) ---
     while running.load(Ordering::Relaxed) {
         while let Ok(msg) = rx.try_recv() {
             let mut base = base_state.lock().unwrap();
             handle_message(&mut base, &msg);
+        }
+
+        // Si le canal est fermé, plus personne ne peut envoyer de message
+        if matches!(rx.try_recv(), Err(mpsc::TryRecvError::Disconnected)) {
+            break;
         }
 
         // TODO: rafraîchir l'UI ici (Mohamed) — lire base_state + robot_states
@@ -101,13 +103,11 @@ pub fn run(
         thread::sleep(Duration::from_millis(TICK_MS));
     }
 
-    // Drain final des derniers messages restés dans le canal
     while let Ok(msg) = rx.try_recv() {
         let mut base = base_state.lock().unwrap();
         handle_message(&mut base, &msg);
     }
 
-    // Attend que les threads robots terminent proprement
     for h in handles {
         let _ = h.join();
     }

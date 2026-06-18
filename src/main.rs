@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 
 use resource_collection_simulation::{BaseState, MapConfig, RobotMessage, generate_map, print_map};

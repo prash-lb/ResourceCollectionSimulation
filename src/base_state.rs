@@ -16,11 +16,13 @@ pub fn handle_message(base: &mut BaseState, msg: &RobotMessage) {
             ResourceKind::Crystal => base.total_crystals += amount,
             ResourceKind::Energy => base.total_energy += amount,
         },
-        RobotMessage::CollectedUnit { pos, kind: _ } => {
+        RobotMessage::CollectedUnit { pos, kind } => {
             if let Some(res) = base.known_resources.get_mut(pos) {
-                res.quantity = res.quantity.saturating_sub(1);
-                if res.quantity == 0 {
-                    base.known_resources.remove(pos);
+                if res.kind == *kind {
+                    res.quantity = res.quantity.saturating_sub(1);
+                    if res.quantity == 0 {
+                        base.known_resources.remove(pos);
+                    }
                 }
             }
         }
