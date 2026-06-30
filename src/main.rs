@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex, RwLock, mpsc};
 use resource_collection_simulation::{BaseState, MapConfig, RobotMessage, generate_map, print_map};
 mod base_state;
 mod simulation;
+mod communication;
+mod ui;
 
 fn main() {
     let config = MapConfig {
