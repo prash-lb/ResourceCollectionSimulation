@@ -1,4 +1,9 @@
-use resource_collection_simulation::{generate_map, print_map, MapConfig};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock, mpsc};
+
+use resource_collection_simulation::{BaseState, MapConfig, RobotMessage, generate_map, print_map};
+mod base_state;
+mod simulation;
 
 fn main() {
     let config = MapConfig {
@@ -22,4 +27,11 @@ fn main() {
     );
     println!();
     print_map(&map);
+
+    let (tx, rx) = mpsc::channel::<RobotMessage>();
+    let base = Arc::new(Mutex::new(BaseState::default()));
+    let map = Arc::new(RwLock::new(map));
+    let running = Arc::new(AtomicBool::new(true));
+
+    simulation::run(rx, base.clone(), map.clone(), tx, running);
 }
