@@ -1,13 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-// ── Coordonnées ──────────────────────────────────────────────
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Pos {
     pub x: usize,
     pub y: usize,
 }
 
-// ── Carte ────────────────────────────────────────────────────
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tile {
     Empty,
@@ -22,7 +20,6 @@ pub enum ResourceKind {
     Crystal,
 }
 
-// ── Map ──────────────────────────────────────────────────────
 pub struct Map {
     pub width: usize,
     pub height: usize,
@@ -37,7 +34,6 @@ pub struct Resource {
     pub quantity: u32,
 }
 
-// ── Messages entre robots et base ────────────────────────────
 #[derive(Clone, Debug)]
 pub enum RobotMessage {
     DiscoveredResource {
@@ -58,7 +54,6 @@ pub enum RobotMessage {
     },
 }
 
-// ── État partagé de la base ───────────────────────────────────
 #[derive(Default)]
 pub struct BaseState {
     pub total_energy: u32,
@@ -67,7 +62,6 @@ pub struct BaseState {
     pub known_obstacles: HashSet<Pos>,
 }
 
-// ── État d'un robot ──────────────────────────────────────────
 #[derive(Clone, Debug)]
 pub struct RobotState {
     pub id: usize,
@@ -110,26 +104,6 @@ impl Map {
             Some(Tile::Resource(ResourceKind::Crystal)) => 'C',
             Some(Tile::Empty) => '.',
             None => ' ',
-        }
-    }
-}
-
-// ── État de l'UI ────────────────────────────────────────────
-#[derive(Clone, Debug)]
-pub struct UIState {
-    pub energy_collected: u32,
-    pub crystals_collected: u32,
-    pub discovered_resources: HashMap<Pos, Resource>,
-    pub discovered_obstacles: Vec<Pos>,
-}
-
-impl UIState {
-    pub fn new() -> Self {
-        UIState {
-            energy_collected: 0,
-            crystals_collected: 0,
-            discovered_resources: HashMap::new(),
-            discovered_obstacles: Vec::new(),
         }
     }
 }

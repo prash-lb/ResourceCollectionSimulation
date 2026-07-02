@@ -1,168 +1,191 @@
-use rand::prelude::IndexedRandom;
 use std::collections::HashSet;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
-use std::thread;
-use std::time::Duration;
+use std::sync::{Arc, RwLock, mpsc};
 
-use crate::types::{Map, Pos, RobotMessage, Tile};
+use crate::types::{Map, Pos, Resource, ResourceKind, RobotMessage, Tile};
+use rand::Rng;
 
 pub struct Scout {
     pub id: usize,
     pub pos: Pos,
-    pub known_obstacles: HashSet<Pos>,
-    pub known_resources: HashSet<Pos>,
-    pub tx: Sender<RobotMessage>,
-    pub map: Arc<Map>,
-    pub shutdown: Arc<AtomicBool>,
+    map: Arc<RwLock<Map>>,
+    tx: mpsc::Sender<RobotMessage>,
+    known_resources: HashSet<Pos>,
+    known_obstacles: HashSet<Pos>,
 }
 
 impl Scout {
-    pub fn new(
-        id: usize,
-        tx: Sender<RobotMessage>,
-        map: Arc<Map>,
-        shutdown: Arc<AtomicBool>,
-    ) -> Self {
-        let base_pos = map.base_pos;
-        Self {
+    pub fn new(id: usize, tx: mpsc::Sender<RobotMessage>, map: Arc<RwLock<Map>>) -> Self {
+        let pos = map.read().unwrap().base_pos;
+        Scout {
             id,
-            pos: base_pos,
-            known_obstacles: HashSet::new(),
-            known_resources: HashSet::new(),
-            tx,
+            pos,
             map,
-            shutdown,
+            tx,
+            known_resources: HashSet::new(),
+            known_obstacles: HashSet::new(),
         }
     }
 
-    pub fn run(mut self) {
-        let mut rng = rand::rng();
+    pub fn step(&mut self, rng: &mut impl Rng) -> Pos {
+        let (messages, next_pos) = {
+            let map = self.map.read().unwrap();
+            let messages = self.scan(&map);
+            let candidates = self.walkable_neighbors(&map);
+            let next = self.pick_move(rng, &candidates);
+            (messages, next)
+        };
 
-        while !self.shutdown.load(Ordering::Relaxed) {
-            self.scan_surroundings();
-
-            if let Some(next_pos) = self.choose_next_move(&mut rng) {
-                self.pos = next_pos;
-            }
-
-            thread::sleep(Duration::from_millis(250));
-        }
-    }
-
-    fn scan_surroundings(&mut self) {
-        self.check_tile(self.pos);
-
-        for target_pos in self.valid_adjacent_positions(self.pos) {
-            self.check_tile(target_pos);
-        }
-    }
-
-    fn check_tile(&mut self, target_pos: Pos) {
-        if let Some(tile) = self.map.get_tile(target_pos) {
-            match tile {
-                Tile::Obstacle => {
-                    if self.known_obstacles.insert(target_pos) {
-                        let _ = self
-                            .tx
-                            .send(RobotMessage::DiscoveredObstacle { pos: target_pos });
-                    }
+        for msg in &messages {
+            match msg {
+                RobotMessage::DiscoveredResource { pos, .. } => {
+                    self.known_resources.insert(*pos);
                 }
-                Tile::Resource(_) => {
-                    if self.known_resources.insert(target_pos) {
-                        if let Some(res) = self.map.resources.get(&target_pos) {
-                            let _ = self.tx.send(RobotMessage::DiscoveredResource {
-                                pos: target_pos,
-                                resource: res.clone(),
-                            });
-                        }
-                    }
+                RobotMessage::DiscoveredObstacle { pos } => {
+                    self.known_obstacles.insert(*pos);
                 }
                 _ => {}
             }
         }
+        for msg in messages {
+            let _ = self.tx.send(msg);
+        }
+
+        if let Some(pos) = next_pos {
+            self.pos = pos;
+        }
+        self.pos
     }
 
-    fn valid_adjacent_positions(&self, pos: Pos) -> Vec<Pos> {
-        let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let mut valid = Vec::new();
+    fn scan(&self, map: &Map) -> Vec<RobotMessage> {
+        let mut messages = vec![];
+        let neighbors = [
+            (-1i32, -1i32),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (0, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ];
 
-        for (dx, dy) in directions {
-            let nx = pos.x as i32 + dx;
-            let ny = pos.y as i32 + dy;
+        for (dx, dy) in neighbors {
+            let nx = self.pos.x as i32 + dx;
+            let ny = self.pos.y as i32 + dy;
+            if nx < 0 || ny < 0 {
+                continue;
+            }
+            let pos = Pos {
+                x: nx as usize,
+                y: ny as usize,
+            };
 
-            if nx >= 0 && ny >= 0 {
-                let neighbor_pos = Pos {
+            match map.get_tile(pos) {
+                Some(Tile::Resource(kind)) if !self.known_resources.contains(&pos) => {
+                    let quantity = map.resources.get(&pos).map(|r| r.quantity).unwrap_or(1);
+                    messages.push(RobotMessage::DiscoveredResource {
+                        pos,
+                        resource: Resource { kind, quantity },
+                    });
+                }
+                Some(Tile::Obstacle) if !self.known_obstacles.contains(&pos) => {
+                    messages.push(RobotMessage::DiscoveredObstacle { pos });
+                }
+                _ => {}
+            }
+        }
+        messages
+    }
+
+    fn walkable_neighbors(&self, map: &Map) -> Vec<Pos> {
+        [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
+            .iter()
+            .filter_map(|(dx, dy)| {
+                let nx = self.pos.x as i32 + dx;
+                let ny = self.pos.y as i32 + dy;
+                if nx < 0 || ny < 0 {
+                    return None;
+                }
+                let pos = Pos {
                     x: nx as usize,
                     y: ny as usize,
                 };
-                if self.map.in_bounds(neighbor_pos) {
-                    valid.push(neighbor_pos);
+                if map.is_walkable(pos) && !self.known_obstacles.contains(&pos) {
+                    Some(pos)
+                } else {
+                    None
                 }
-            }
-        }
-        valid
+            })
+            .collect()
     }
 
-    fn choose_next_move(&self, rng: &mut impl rand::Rng) -> Option<Pos> {
-        let mut valid_moves = Vec::new();
-
-        for next_pos in self.valid_adjacent_positions(self.pos) {
-            if !self.known_obstacles.contains(&next_pos) {
-                valid_moves.push(next_pos);
-            }
+    fn pick_move(&self, rng: &mut impl Rng, candidates: &[Pos]) -> Option<Pos> {
+        if candidates.is_empty() {
+            return None;
         }
-
-        valid_moves.choose(rng).copied()
+        Some(candidates[rng.random_range(0..candidates.len())])
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Resource, ResourceKind};
+    use crate::types::{Map, Tile};
     use std::collections::HashMap;
     use std::sync::mpsc;
 
-    #[test]
-    fn test_scout_only_discovers_resource_once() {
-        let (tx, rx) = mpsc::channel();
-        let shutdown = Arc::new(AtomicBool::new(false));
+    fn make_map(width: usize, height: usize) -> Arc<RwLock<Map>> {
+        Arc::new(RwLock::new(Map {
+            width,
+            height,
+            tiles: vec![vec![Tile::Empty; width]; height],
+            base_pos: Pos { x: 0, y: 0 },
+            resources: HashMap::new(),
+        }))
+    }
 
+    #[test]
+    fn scout_stays_in_bounds() {
+        let map = make_map(5, 5);
+        let (tx, _rx) = mpsc::channel();
+        let mut scout = Scout::new(0, tx, map);
+        let mut rng = rand::rng();
+        for _ in 0..20 {
+            let pos = scout.step(&mut rng);
+            assert!(pos.x < 5 && pos.y < 5);
+        }
+    }
+
+    #[test]
+    fn scout_reports_resource_only_once() {
+        let mut tiles = vec![vec![Tile::Empty; 3]; 3];
+        tiles[0][1] = Tile::Resource(ResourceKind::Energy);
         let mut resources = HashMap::new();
-        let res_pos = Pos { x: 1, y: 0 };
         resources.insert(
-            res_pos,
+            Pos { x: 1, y: 0 },
             Resource {
                 kind: ResourceKind::Energy,
-                quantity: 120,
+                quantity: 100,
             },
         );
-
-        let map = Arc::new(Map {
-            width: 2,
-            height: 1,
-            tiles: vec![vec![Tile::Base, Tile::Resource(ResourceKind::Energy)]],
+        let map = Arc::new(RwLock::new(Map {
+            width: 3,
+            height: 3,
+            tiles,
             base_pos: Pos { x: 0, y: 0 },
             resources,
-        });
-
-        let mut scout = Scout::new(1, tx, map, shutdown);
-
-        scout.scan_surroundings();
-        assert!(scout.known_resources.contains(&res_pos));
-
-        scout.scan_surroundings();
-
-        let mut msg_count = 0;
-        while rx.try_recv().is_ok() {
-            msg_count += 1;
+        }));
+        let (tx, rx) = mpsc::channel();
+        let mut scout = Scout::new(0, tx, map);
+        let mut rng = rand::rng();
+        for _ in 0..5 {
+            scout.step(&mut rng);
         }
-
-        assert_eq!(
-            msg_count, 1,
-            "Le scout a spammé le canal avec la même ressource !"
-        );
+        let count = rx
+            .try_iter()
+            .filter(|m| matches!(m, RobotMessage::DiscoveredResource { .. }))
+            .count();
+        assert_eq!(count, 1);
     }
 }
