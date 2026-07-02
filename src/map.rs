@@ -7,16 +7,13 @@ use rand::{Rng, SeedableRng};
 
 use crate::types::{Map, Pos, Resource, ResourceKind, Tile};
 
-/// Paramètres de génération de carte.
 pub struct MapConfig {
     pub width: usize,
     pub height: usize,
     pub seed: u32,
     pub energy_count: usize,
     pub crystal_count: usize,
-    /// Seuil du bruit de Perlin au-dessus duquel une case devient un obstacle.
     pub obstacle_threshold: f64,
-    /// Échelle du bruit (plus petit = obstacles plus larges).
     pub noise_scale: f64,
 }
 
@@ -38,7 +35,6 @@ const MIN_RESOURCE_QTY: u32 = 50;
 const MAX_RESOURCE_QTY: u32 = 200;
 const BASE_CLEAR_RADIUS: i32 = 2;
 
-/// Génère une carte procédurale avec obstacles (Perlin), base centrale et ressources.
 pub fn generate_map(config: &MapConfig) -> Map {
     let base_pos = Pos {
         x: config.width / 2,
@@ -54,10 +50,8 @@ pub fn generate_map(config: &MapConfig) -> Map {
             if is_in_base_clear_zone(pos, base_pos) {
                 continue;
             }
-
             let noise_value =
                 perlin.get([x as f64 * config.noise_scale, y as f64 * config.noise_scale]);
-
             if noise_value > config.obstacle_threshold {
                 tiles[y][x] = Tile::Obstacle;
             }
@@ -69,19 +63,14 @@ pub fn generate_map(config: &MapConfig) -> Map {
     let mut rng = StdRng::seed_from_u64(config.seed as u64 + 1);
     let mut resources = HashMap::new();
 
-    let mut empty_positions: Vec<Pos> = Vec::new();
-    for y in 0..config.height {
-        for x in 0..config.width {
-            if tiles[y][x] == Tile::Empty {
-                empty_positions.push(Pos { x, y });
-            }
-        }
-    }
+    let mut empty_positions: Vec<Pos> = (0..config.height)
+        .flat_map(|y| (0..config.width).map(move |x| Pos { x, y }))
+        .filter(|pos| tiles[pos.y][pos.x] == Tile::Empty)
+        .collect();
 
     empty_positions.shuffle(&mut rng);
 
-    let total_resources = config.energy_count + config.crystal_count;
-    let placement_count = total_resources.min(empty_positions.len());
+    let placement_count = (config.energy_count + config.crystal_count).min(empty_positions.len());
 
     for (i, pos) in empty_positions
         .into_iter()
@@ -93,7 +82,6 @@ pub fn generate_map(config: &MapConfig) -> Map {
         } else {
             ResourceKind::Crystal
         };
-
         let quantity = rng.random_range(MIN_RESOURCE_QTY..=MAX_RESOURCE_QTY);
         tiles[pos.y][pos.x] = Tile::Resource(kind);
         resources.insert(pos, Resource { kind, quantity });
@@ -114,12 +102,10 @@ fn is_in_base_clear_zone(pos: Pos, base_pos: Pos) -> bool {
     dx.abs() <= BASE_CLEAR_RADIUS && dy.abs() <= BASE_CLEAR_RADIUS
 }
 
-/// Affiche la carte en ASCII (utile pour le debug et la vérification).
 pub fn print_map(map: &Map) {
     for y in 0..map.height {
         for x in 0..map.width {
-            let pos = Pos { x, y };
-            print!("{}", map.char_at(pos));
+            print!("{}", map.char_at(Pos { x, y }));
         }
         println!();
     }
